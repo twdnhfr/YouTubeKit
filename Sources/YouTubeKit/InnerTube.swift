@@ -199,6 +199,8 @@ class InnerTube {
         var request = URLRequest(url: urlComponents.url!)
         request.httpMethod = "post"
         request.httpBody = data
+        // cookies only via explicit header – otherwise Set-Cookie responses end up in HTTPCookieStorage.shared and leak into anonymous requests
+        request.httpShouldHandleCookies = false
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(ytcfg.userAgent ?? "Mozilla/5.0", forHTTPHeaderField: "User-Agent")
         request.addValue("en-US,en", forHTTPHeaderField: "accept-language")

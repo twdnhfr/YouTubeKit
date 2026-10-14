@@ -110,6 +110,10 @@ public class YouTube {
             request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
             request.setValue("en-US,en", forHTTPHeaderField: "accept-language")
             request.httpShouldHandleCookies = false
+            if let cookieHeader, !cookieHeader.isEmpty {
+                // logged-in watch page, so availability checks pass for members-only/private videos
+                request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+            }
             let (data, _) = try await URLSession.shared.data(for: request)
             _watchHTML = String(data: data, encoding: .utf8) ?? ""
             return _watchHTML!
@@ -149,6 +153,8 @@ public class YouTube {
                 }
             case .error:
                 throw YouTubeKitError.videoUnavailable
+            case .liveStreamOffline:
+                throw YouTubeKitError.liveStreamError
             case .liveStream:
                 let streamingData = try await videoInfos.map { $0.streamingData }
                 if streamingData.allSatisfy({ $0?.hlsManifestUrl == nil }) {
@@ -437,8 +443,12 @@ public class YouTube {
         let innertube = InnerTube(client: .webCreator, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache, cookieHeader: cookieHeader)
         let innertubeResponse = try await innertube.player(videoID: videoID)
 
-        if innertubeResponse.playabilityStatus?.status == "UNPLAYABLE" || innertubeResponse.playabilityStatus?.status == "LOGIN_REQUIRED" {
-            throw YouTubeKitError.videoAgeRestricted
+        let statuses = [innertubeResponse.playabilityStatus] + (_videoInfos ?? []).map(\.playabilityStatus)
+        let errors = statuses.compactMap { Self.playabilityError(status: $0?.status, reason: $0?.reason) }
+        if !errors.isEmpty {
+            // prefer a specific reason (e.g. from the primary clients) over the generic ones
+            let generic: [YouTubeKitError] = [.videoUnavailable, .loginRequired]
+            throw errors.first { !generic.contains($0) } ?? (errors.contains(.loginRequired) ? .loginRequired : .videoUnavailable)
         }
 
         if innertubeResponse.videoDetails?.videoId != videoID {
@@ -449,6 +459,39 @@ public class YouTube {
         _videoInfos = [innertubeResponse]
     }
     
+    /// Maps a non-playable `playabilityStatus` to an error; nil if playable.
+    static func playabilityError(status: String?, reason: String?) -> YouTubeKitError? {
+        guard let status, status != "OK" else { return nil }
+        let reason = reason?.lowercased() ?? ""
+        switch status {
+        case "LIVE_STREAM_OFFLINE":
+            return .liveStreamError
+        case "AGE_CHECK_REQUIRED", "AGE_VERIFICATION_REQUIRED":
+            return .videoAgeRestricted
+        default:
+            break
+        }
+        if ["confirm your age", "age-restricted", "age restricted", "inappropriate for some users"].contains(where: reason.contains) {
+            return .videoAgeRestricted
+        }
+        if reason.contains("members-only") || reason.contains("join this channel") {
+            return .membersOnly
+        }
+        if reason.contains("private") {
+            return .videoPrivate
+        }
+        if reason.contains("recording") {
+            return .recordingUnavailable
+        }
+        if reason.contains("country") || reason.contains("region") {
+            return .videoRegionBlocked
+        }
+        if reason.contains("live") || reason.contains("premiere") {
+            return .liveStreamError
+        }
+        return status == "LOGIN_REQUIRED" ? .loginRequired : .videoUnavailable
+    }
+
     /// Interface to query both adaptive (DASH) and progressive streams.
     /*public var streams: StreamQuery {
         get async throws {

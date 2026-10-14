@@ -320,6 +320,7 @@ class Extraction {
                 case loginRequired = "LOGIN_REQUIRED"
                 case error = "ERROR"
                 case liveStream = "LIVE_STREAM"
+                case liveStreamOffline = "LIVE_STREAM_OFFLINE"
             }
 
             struct LiveStreamabilityRenderer: Decodable {

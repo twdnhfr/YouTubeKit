@@ -19,6 +19,8 @@ public enum YouTubeKitError: String, Error {
     case recordingUnavailable
     case membersOnly
     case videoRegionBlocked
+    /// sign-in required for other reasons than age (e.g. bot check)
+    case loginRequired
 }
 
 extension YouTubeKitError: LocalizedError {
@@ -39,6 +41,9 @@ extension YouTubeKitError: LocalizedError {
 
         case .membersOnly:
             return NSLocalizedString("Video is members only", comment: "")
+
+        case .loginRequired:
+            return NSLocalizedString("Sign in required", comment: "")
 
         default: return nil
         }
