@@ -21,6 +21,8 @@ public enum YouTubeKitError: String, Error {
     case videoRegionBlocked
     /// sign-in required for other reasons than age (e.g. bot check)
     case loginRequired
+    /// YouTube flagged the requesting IP ("Sign in to confirm you're not a bot") – usually temporary
+    case botCheck
 }
 
 extension YouTubeKitError: LocalizedError {
@@ -44,6 +46,9 @@ extension YouTubeKitError: LocalizedError {
 
         case .loginRequired:
             return NSLocalizedString("Sign in required", comment: "")
+
+        case .botCheck:
+            return NSLocalizedString("YouTube requires a bot check for this network", comment: "")
 
         default: return nil
         }

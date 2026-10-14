@@ -407,9 +407,16 @@ public class YouTube {
             for (i, videoInfo) in videoInfos.enumerated() where videoInfo.videoDetails?.videoId != videoID {
                 os_log("Skipping player response from client %{public}i. Got player response for %{public}@ instead of %{public}@", log: log, type: .info, i, videoInfo.videoDetails?.videoId ?? "nil", videoID)
             }
+            let rejectedStatuses = videoInfos.map(\.playabilityStatus)
             videoInfos = videoInfos.filter { $0.videoDetails?.videoId == videoID }
             
             if videoInfos.isEmpty {
+                // responses without videoDetails usually carry the reason (bot check, private, …) in playabilityStatus
+                let playabilityErrors = rejectedStatuses.compactMap { Self.playabilityError(status: $0?.status, reason: $0?.reason) }
+                let generic: [YouTubeKitError] = [.videoUnavailable, .loginRequired]
+                if let specific = playabilityErrors.first(where: { !generic.contains($0) }) ?? playabilityErrors.first {
+                    throw specific
+                }
                 throw errors.first ?? YouTubeKitError.extractError
             }
             
@@ -470,6 +477,9 @@ public class YouTube {
             return .videoAgeRestricted
         default:
             break
+        }
+        if reason.contains("not a bot") || reason.contains("unusual traffic") {
+            return .botCheck
         }
         if ["confirm your age", "age-restricted", "age restricted", "inappropriate for some users"].contains(where: reason.contains) {
             return .videoAgeRestricted
