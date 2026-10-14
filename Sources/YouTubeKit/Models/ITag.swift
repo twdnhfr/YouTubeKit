@@ -9,7 +9,8 @@ import Foundation
 
 public struct ITag: Sendable {
     
-    let itag: Int
+    /// numeric format id (e.g. 137 = 1080p avc1, 140 = m4a 128k)
+    public let itag: Int
     
     /// lower side of resolution (e.g. 1080 for 1080p)
     let videoResolution: Int?

@@ -29,7 +29,8 @@ public struct Stream: Sendable {
     @available(*, deprecated, message: "Might be empty if using remote fetching method. Use `videoCodec`, `audioCodec` or `fileExtension` instead.")
     public let subtype: String
     
-    private let filesize: Int?
+    /// content length in bytes, if YouTube reported it
+    public let filesize: Int?
     
     init(format: InnerTube.StreamingData.Format) throws {
         guard let url = format.url.flatMap({ URL(string: $0) }),

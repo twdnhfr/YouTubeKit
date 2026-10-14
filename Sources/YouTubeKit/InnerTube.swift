@@ -24,6 +24,25 @@ class InnerTube {
         var deviceModel: String? = nil
         var osName: String? = nil
         var osVersion: String? = nil
+
+        init(name: String, version: String, screen: String?, apiKey: String, internalID: Int, userAgent: String?, playerParams: String? = nil, androidSdkVersion: Int? = nil, deviceMake: String? = nil, deviceModel: String? = nil, osName: String? = nil, osVersion: String? = nil) {
+            self.name = name
+            self.version = version
+            self.screen = screen
+            self.apiKey = apiKey
+            self.internalID = internalID
+            self.userAgent = userAgent
+            self.playerParams = playerParams
+            self.androidSdkVersion = androidSdkVersion
+            self.deviceMake = deviceMake
+            self.deviceModel = deviceModel
+            self.osName = osName
+            self.osVersion = osVersion
+        }
+
+        init(definition d: InnerTubeClientDefinition) {
+            self.init(name: d.name, version: d.version, screen: d.screen, apiKey: d.apiKey ?? "", internalID: d.internalID, userAgent: d.userAgent, playerParams: d.playerParams, androidSdkVersion: d.androidSdkVersion, deviceMake: d.deviceMake, deviceModel: d.deviceModel, osName: d.osName, osVersion: d.osVersion)
+        }
         
         var context: Context {
             let client = Context.ContextClient(clientName: name, clientVersion: version, clientScreen: screen, androidSdkVersion: androidSdkVersion, deviceMake: deviceMake, deviceModel: deviceModel, osName: osName, osVersion: osVersion)
@@ -61,7 +80,7 @@ class InnerTube {
     }
     
     // overview of clients: https://github.com/zerodytrash/YouTube-Internal-Clients
-    private let defaultClients = [
+    private static let defaultClients = [
         ClientType.web: Client(name: "WEB", version: "2.20260708.00.00", screen: nil, apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 1, userAgent: nil),
         ClientType.webSafari: Client(name: "WEB", version: "2.20260114.08.00", screen: nil, apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 1, userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"),
         ClientType.android: Client(name: "ANDROID", version: "20.10.38", screen: nil, apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w", internalID: 3, userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip", playerParams: "CgIQBg==", androidSdkVersion: 30),
@@ -81,7 +100,7 @@ class InnerTube {
         ClientType.mWeb: Client(name: "MWEB", version: "2.20250925.01.00", screen: nil, apiKey: "", internalID: 2, userAgent: nil)
     ]
     
-    enum ClientType: String {
+    enum ClientType: String, CaseIterable {
         case web, webSafari, android, androidSdkless, androidMusic, androidVR, visionOS, webEmbed, webCreator, androidEmbed, tv, tvEmbed, ios, iosMusic, mediaConnectFrontend, mWeb
     }
     
@@ -97,17 +116,34 @@ class InnerTube {
     private let playerParams: String?
     private let encryptedHostFlags: String?
 
+    private let cookieHeader: String?
+
     private let ytcfg: Extraction.YtCfg
     private let signatureTimestamp: Int?
     
     private let baseURL = "https://www.youtube.com/youtubei/v1"
     
-    init(client: ClientType = .ios, signatureTimestamp: Int?, ytcfg: Extraction.YtCfg, useOAuth: Bool = false, allowCache: Bool = true) {
-        self.context = defaultClients[client]!.context
-        self.apiKey = defaultClients[client]!.apiKey
-        self.headers = defaultClients[client]!.headers
-        self.playerParams = defaultClients[client]!.playerParams
-        self.encryptedHostFlags = client == .webEmbed ? ytcfg.embeddedPlayerEncryptedHostFlags : nil
+    convenience init(client: ClientType = .ios, signatureTimestamp: Int?, ytcfg: Extraction.YtCfg, useOAuth: Bool = false, allowCache: Bool = true, cookieHeader: String? = nil) {
+        self.init(clientKey: client.rawValue, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowCache, cookieHeader: cookieHeader)!
+    }
+
+    /// Resolves `clientKey` against `YouTubeKitConfiguration.clientOverrides` first, then the built-in clients.
+    init?(clientKey: String, signatureTimestamp: Int?, ytcfg: Extraction.YtCfg, useOAuth: Bool = false, allowCache: Bool = true, cookieHeader: String? = nil) {
+        let builtIn = ClientType(rawValue: clientKey)
+        let client: Client
+        if let definition = YouTubeKitConfiguration.clientOverrides[clientKey] {
+            client = Client(definition: definition)
+        } else if let builtIn, let defaultClient = InnerTube.defaultClients[builtIn] {
+            client = defaultClient
+        } else {
+            return nil
+        }
+        self.context = client.context
+        self.apiKey = client.apiKey
+        self.headers = client.headers
+        self.playerParams = client.playerParams
+        self.encryptedHostFlags = builtIn == .webEmbed ? ytcfg.embeddedPlayerEncryptedHostFlags : nil
+        self.cookieHeader = cookieHeader
         self.signatureTimestamp = signatureTimestamp
         self.ytcfg = ytcfg
         self.useOAuth = useOAuth
@@ -172,6 +208,14 @@ class InnerTube {
         
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
+        }
+        
+        if let cookieHeader, !cookieHeader.isEmpty {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+            if let authorization = InnerTube.sapisidHashAuthorization(cookieHeader: cookieHeader) {
+                request.setValue(authorization, forHTTPHeaderField: "Authorization")
+                request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
+            }
         }
         
         // TODO: handle oauth auth case again

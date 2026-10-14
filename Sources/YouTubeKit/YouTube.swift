@@ -67,6 +67,10 @@ public class YouTube {
     
     let useOAuth: Bool
     let allowOAuthCache: Bool
+
+    /// Optional browser cookies (`name=value; …`) sent with InnerTube player requests.
+    /// Set before accessing `streams`; enables age-restricted/member content at the cost of account exposure.
+    public var cookieHeader: String?
     
     let methods: [ExtractionMethod]
     
@@ -361,10 +365,12 @@ public class YouTube {
             let signatureTimestamp = try await signatureTimestamp
             let ytcfg = try await ytcfg
             
-            let innertubeClients: [InnerTube.ClientType] = [.visionOS, .web]
+            let innertubeClients = YouTubeKitConfiguration.clientOrder
             
-            let results: [Result<InnerTube.VideoInfo, Error>] = await innertubeClients.concurrentMap { [videoID, useOAuth, allowOAuthCache] client in
-                let innertube = InnerTube(client: client, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
+            let results: [Result<InnerTube.VideoInfo, Error>] = await innertubeClients.concurrentMap { [videoID, useOAuth, allowOAuthCache, cookieHeader] client in
+                guard let innertube = InnerTube(clientKey: client, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache, cookieHeader: cookieHeader) else {
+                    return .failure(YouTubeKitError.extractError)
+                }
                 
                 do {
                     let innertubeResponse = try await innertube.player(videoID: videoID)
@@ -413,7 +419,7 @@ public class YouTube {
         } else {
             try await ytcfg
         }
-        let innertube = InnerTube(client: client, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
+        let innertube = InnerTube(client: client, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache, cookieHeader: cookieHeader)
         let videoInfo = try await innertube.player(videoID: videoID)
         
         // ignore if incorrect videoID
@@ -428,7 +434,7 @@ public class YouTube {
     private func bypassAgeGate() async throws {
         let signatureTimestamp = try await signatureTimestamp
         let ytcfg = try await ytcfg
-        let innertube = InnerTube(client: .webCreator, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
+        let innertube = InnerTube(client: .webCreator, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache, cookieHeader: cookieHeader)
         let innertubeResponse = try await innertube.player(videoID: videoID)
 
         if innertubeResponse.playabilityStatus?.status == "UNPLAYABLE" || innertubeResponse.playabilityStatus?.status == "LOGIN_REQUIRED" {
